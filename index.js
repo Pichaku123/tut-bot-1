@@ -18,7 +18,7 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 
         const timer = setInterval(() => {
             newState.channel.send(`Hey ${newState.member.user.username}, time to stretch and hydrate a bit!`)
-        },  1000);
+        },  60*60*1000);
         timers.set(userId, timer);
     }
     
