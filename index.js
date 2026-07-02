@@ -3,11 +3,26 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-
 // channels+roles and voice state access
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],    
 });
+
+//Command loader, loads commands to be used
+const fs = require("fs");
+const path = require("path");
+
+client.commands = new Map();
+
+const commandsPath = path.join(__dirname, "commands");
+const commandFiles = fs
+    .readdirSync(commandsPath)
+    .filter((file) => file.endsWith(".js"));
+
+for (const file of commandFiles) {
+    const command = require(`./commands/${file}`);
+    client.commands.set(command.data.name, command);
+}
 
 client.once("clientReady", () => {
     console.log(`Logged in as ${client.user.tag}`);
@@ -24,23 +39,28 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     if (joined) {
         console.log(`${newState.member.user.username} joined a voice channel`);
 
-        await prisma.user.upsert({  // create gives conflicts for same userId, so upsert used
+        const user = await prisma.user.upsert({  // create gives conflicts for same userId, so upsert used
             where: { id: userId },
             update: { username },
             create: { id: userId, username },
         });
+        console.log("reminderIntervalSeconds:", user.reminderIntervalSeconds);
 
-        const timer = setInterval(async () => {
-                try{
+        const timer = setInterval(
+            async () => {
+                try {
                     const user = await client.users.fetch(userId);
                     await user.send(
                         `Hey ${newState.member.user.username}, time to stretch and hydrate a bit!`,
                     );
-                } catch(err) {
-                    console.error(`Could not message ${username}:`, err.message);
+                } catch (err) {
+                    console.error(
+                        `Could not message ${username}:`,
+                        err.message,
+                    );
                 }
             },
-            10 * 1000,     // TODO- change this back to 1 hour later.
+            user.reminderIntervalSeconds * 1000, 
         );
         sessions.set(userId, {
             timer,
@@ -71,6 +91,26 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             console.log(`Session lasted for ${durationSeconds} seconds, saved into DB.`);
             clearInterval(currSession.timer);
             sessions.delete(userId);
+        }
+    }
+});
+
+//Interaction handler, after slash command is used
+client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
+
+    try {
+        await command.execute(interaction);
+    } catch (error) {
+        console.error(error);
+
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply("Error executing command.");
+        } else {
+            await interaction.reply("Error executing command.");
         }
     }
 });

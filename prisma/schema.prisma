@@ -17,6 +17,7 @@ model User {
   username  String
   sessions  Session[]
   createdAt DateTime  @default(now())
+  reminderIntervalSeconds Int @default(600)    
 }
 
 model Session {
